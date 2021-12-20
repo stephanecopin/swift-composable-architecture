@@ -63,7 +63,7 @@
   <span class="attribute">@</span><span class="attribute">available</span>(<span class="keyword">macOS</span> <span class="number literal">12</span>, *)
   <span class="attribute">@</span><span class="attribute">available</span>(<span class="keyword">tvOS</span> <span class="number literal">13</span>, *)
   <span class="attribute">@</span><span class="attribute">available</span>(<span class="keyword">watchOS</span> <span class="number literal">6</span>, *)
-  <span class="keyword">public</span> <span class="keyword">func</span> <span class="function">confirmationDialog</span>&lt;<span class="variable">Action</span>&gt;(
+  <span class="attribute">@</span><span class="type">ViewBuilder</span> <span class="keyword">public</span> <span class="keyword">func</span> <span class="function">confirmationDialog</span>&lt;<span class="variable">Action</span>&gt;(
     <span class="keyword">_</span> <span class="variable">store</span>: <a href="/swift-composable-architecture/Store"><span class="type">Store</span></a>&lt;<a href="/swift-composable-architecture/ConfirmationDialogState"><span class="type">ConfirmationDialogState</span></a>&lt;<span class="type">Action</span>&gt;?, <span class="type">Action</span>&gt;,
     <span class="variable">dismiss</span>: <span class="type">Action</span>
   ) -&gt; <span class="keyword">some</span> <span class="type">View</span>  </body></html></code></pre>
@@ -104,7 +104,7 @@
         <code><a href="#view.alert(_:dismiss:)">alert(_:​dismiss:​)</a></code>
     </h3>
     <div class="declaration">
-<pre class="highlight"><code><html><body><span class="keyword">public</span> <span class="keyword">func</span> <span class="function">alert</span>&lt;<span class="variable">Action</span>&gt;(
+<pre class="highlight"><code><html><body><span class="attribute">@</span><span class="type">ViewBuilder</span> <span class="keyword">public</span> <span class="keyword">func</span> <span class="function">alert</span>&lt;<span class="variable">Action</span>&gt;(
     <span class="keyword">_</span> <span class="variable">store</span>: <a href="/swift-composable-architecture/Store"><span class="type">Store</span></a>&lt;<a href="/swift-composable-architecture/AlertState"><span class="type">AlertState</span></a>&lt;<span class="type">Action</span>&gt;?, <span class="type">Action</span>&gt;,
     <span class="variable">dismiss</span>: <span class="type">Action</span>
   ) -&gt; <span class="keyword">some</span> <span class="type">View</span>  </body></html></code></pre>
@@ -146,7 +146,7 @@
 
     <footer>
         <p>
-    Generated on <time datetime="2021-12-13T19:08:43+0000">December 13, 2021</time> using <a href="https://github.com/SwiftDocOrg/swift-doc">swift-doc</a> <span class="version">1.0.0-rc.1</span>.
+    Generated on <time datetime="2021-12-20T21:42:41+0000">December 20, 2021</time> using <a href="https://github.com/SwiftDocOrg/swift-doc">swift-doc</a> <span class="version">1.0.0-rc.1</span>.
 </p>
     </footer>
 </body>
