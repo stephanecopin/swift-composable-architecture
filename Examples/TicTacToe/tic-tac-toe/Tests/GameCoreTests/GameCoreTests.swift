@@ -5,13 +5,13 @@ import XCTest
 @MainActor
 final class GameCoreTests: XCTestCase {
   let store = TestStore(
-    initialState: GameState(
+    initialState: Game.State(
       oPlayerName: "Blob Jr.",
       xPlayerName: "Blob Sr."
-    ),
-    reducer: gameReducer,
-    environment: GameEnvironment()
-  )
+    )
+  ) {
+    Game()
+  }
 
   func testFlow_Winner_Quit() async {
     await self.store.send(.cellTapped(row: 0, column: 0)) {
@@ -33,7 +33,6 @@ final class GameCoreTests: XCTestCase {
     await self.store.send(.cellTapped(row: 2, column: 0)) {
       $0.board[2][0] = .x
     }
-    await self.store.send(.quitButtonTapped)
   }
 
   func testFlow_Tie() async {
@@ -74,7 +73,7 @@ final class GameCoreTests: XCTestCase {
       $0.currentPlayer = .o
     }
     await self.store.send(.playAgainButtonTapped) {
-      $0 = GameState(oPlayerName: "Blob Jr.", xPlayerName: "Blob Sr.")
+      $0 = Game.State(oPlayerName: "Blob Jr.", xPlayerName: "Blob Sr.")
     }
   }
 }

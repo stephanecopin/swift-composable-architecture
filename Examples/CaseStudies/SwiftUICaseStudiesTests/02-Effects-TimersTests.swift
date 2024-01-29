@@ -6,37 +6,35 @@ import XCTest
 @MainActor
 final class TimersTests: XCTestCase {
   func testStart() async {
-    let mainQueue = DispatchQueue.test
+    let clock = TestClock()
 
-    let store = TestStore(
-      initialState: TimersState(),
-      reducer: timersReducer,
-      environment: TimersEnvironment(
-        mainQueue: mainQueue.eraseToAnyScheduler()
-      )
-    )
+    let store = TestStore(initialState: Timers.State()) {
+      Timers()
+    } withDependencies: {
+      $0.continuousClock = clock
+    }
 
     await store.send(.toggleTimerButtonTapped) {
       $0.isTimerActive = true
     }
-    await mainQueue.advance(by: 1)
-    await store.receive(.timerTicked) {
+    await clock.advance(by: .seconds(1))
+    await store.receive(\.timerTicked) {
       $0.secondsElapsed = 1
     }
-    await mainQueue.advance(by: 5)
-    await store.receive(.timerTicked) {
+    await clock.advance(by: .seconds(5))
+    await store.receive(\.timerTicked) {
       $0.secondsElapsed = 2
     }
-    await store.receive(.timerTicked) {
+    await store.receive(\.timerTicked) {
       $0.secondsElapsed = 3
     }
-    await store.receive(.timerTicked) {
+    await store.receive(\.timerTicked) {
       $0.secondsElapsed = 4
     }
-    await store.receive(.timerTicked) {
+    await store.receive(\.timerTicked) {
       $0.secondsElapsed = 5
     }
-    await store.receive(.timerTicked) {
+    await store.receive(\.timerTicked) {
       $0.secondsElapsed = 6
     }
     await store.send(.toggleTimerButtonTapped) {

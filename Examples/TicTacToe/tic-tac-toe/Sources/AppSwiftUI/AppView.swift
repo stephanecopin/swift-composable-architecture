@@ -5,25 +5,25 @@ import NewGameSwiftUI
 import SwiftUI
 
 public struct AppView: View {
-  let store: Store<AppState, AppAction>
+  let store: StoreOf<TicTacToe>
 
-  public init(store: Store<AppState, AppAction>) {
+  public init(store: StoreOf<TicTacToe>) {
     self.store = store
   }
 
   public var body: some View {
-    SwitchStore(self.store) {
-      CaseLet(state: /AppState.login, action: AppAction.login) { store in
-        NavigationView {
+    switch self.store.state {
+    case .login:
+      if let store = self.store.scope(state: \.login, action: \.login) {
+        NavigationStack {
           LoginView(store: store)
         }
-        .navigationViewStyle(.stack)
       }
-      CaseLet(state: /AppState.newGame, action: AppAction.newGame) { store in
-        NavigationView {
+    case .newGame:
+      if let store = self.store.scope(state: \.newGame, action: \.newGame) {
+        NavigationStack {
           NewGameView(store: store)
         }
-        .navigationViewStyle(.stack)
       }
     }
   }

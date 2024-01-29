@@ -8,102 +8,96 @@ private let readMe = """
   and fires off an effect that will load this state a second later.
   """
 
-struct NavigateAndLoadListState: Equatable {
-  var rows: IdentifiedArrayOf<Row> = [
-    Row(count: 1, id: UUID()),
-    Row(count: 42, id: UUID()),
-    Row(count: 100, id: UUID()),
-  ]
-  var selection: Identified<Row.ID, CounterState?>?
+// MARK: - Feature domain
 
-  struct Row: Equatable, Identifiable {
-    var count: Int
-    let id: UUID
+@Reducer
+struct NavigateAndLoadList {
+  struct State: Equatable {
+    var rows: IdentifiedArrayOf<Row> = [
+      Row(count: 1, id: UUID()),
+      Row(count: 42, id: UUID()),
+      Row(count: 100, id: UUID()),
+    ]
+    var selection: Identified<Row.ID, Counter.State?>?
+
+    struct Row: Equatable, Identifiable {
+      var count: Int
+      let id: UUID
+    }
   }
-}
 
-enum NavigateAndLoadListAction: Equatable {
-  case counter(CounterAction)
-  case setNavigation(selection: UUID?)
-  case setNavigationSelectionDelayCompleted
-}
+  enum Action {
+    case counter(Counter.Action)
+    case setNavigation(selection: UUID?)
+    case setNavigationSelectionDelayCompleted
+  }
 
-struct NavigateAndLoadListEnvironment {
-  var mainQueue: AnySchedulerOf<DispatchQueue>
-}
+  @Dependency(\.continuousClock) var clock
+  private enum CancelID { case load }
 
-let navigateAndLoadListReducer =
-  counterReducer
-  .optional()
-  .pullback(state: \Identified.value, action: .self, environment: { $0 })
-  .optional()
-  .pullback(
-    state: \NavigateAndLoadListState.selection,
-    action: /NavigateAndLoadListAction.counter,
-    environment: { _ in CounterEnvironment() }
-  )
-  .combined(
-    with: Reducer<
-      NavigateAndLoadListState, NavigateAndLoadListAction, NavigateAndLoadListEnvironment
-    > { state, action, environment in
-
-      enum CancelID {}
-
+  var body: some Reducer<State, Action> {
+    Reduce { state, action in
       switch action {
       case .counter:
         return .none
 
       case let .setNavigation(selection: .some(id)):
         state.selection = Identified(nil, id: id)
-        return .task {
-          try await environment.mainQueue.sleep(for: 1)
-          return .setNavigationSelectionDelayCompleted
+        return .run { send in
+          try await self.clock.sleep(for: .seconds(1))
+          await send(.setNavigationSelectionDelayCompleted)
         }
-        .cancellable(id: CancelID.self, cancelInFlight: true)
+        .cancellable(id: CancelID.load, cancelInFlight: true)
 
       case .setNavigation(selection: .none):
         if let selection = state.selection, let count = selection.value?.count {
           state.rows[id: selection.id]?.count = count
         }
         state.selection = nil
-        return .cancel(id: CancelID.self)
+        return .cancel(id: CancelID.load)
 
       case .setNavigationSelectionDelayCompleted:
         guard let id = state.selection?.id else { return .none }
-        state.selection?.value = CounterState(count: state.rows[id: id]?.count ?? 0)
+        state.selection?.value = Counter.State(count: state.rows[id: id]?.count ?? 0)
         return .none
       }
     }
-  )
+    .ifLet(\.selection, action: \.counter) {
+      EmptyReducer()
+        .ifLet(\.value, action: \.self) {
+          Counter()
+        }
+    }
+  }
+}
+
+// MARK: - Feature view
 
 struct NavigateAndLoadListView: View {
-  let store: Store<NavigateAndLoadListState, NavigateAndLoadListAction>
+  @Bindable var store = Store(initialState: NavigateAndLoadList.State()) {
+    NavigateAndLoadList()
+  }
 
   var body: some View {
-    WithViewStore(self.store) { viewStore in
+    WithViewStore(self.store, observe: { $0 }) { viewStore in
       Form {
         Section {
           AboutView(readMe: readMe)
         }
         ForEach(viewStore.rows) { row in
           NavigationLink(
-            destination: IfLetStore(
-              self.store.scope(
-                state: \.selection?.value,
-                action: NavigateAndLoadListAction.counter
-              )
-            ) {
-              CounterView(store: $0)
-            } else: {
-              ProgressView()
-            },
+            "Load optional counter that starts from \(row.count)",
             tag: row.id,
             selection: viewStore.binding(
               get: \.selection?.id,
-              send: NavigateAndLoadListAction.setNavigation(selection:)
+              send: { .setNavigation(selection: $0) }
             )
           ) {
-            Text("Load optional counter that starts from \(row.count)")
+            IfLetStore(self.store.scope(state: \.selection?.value, action: \.counter)) {
+              CounterView(store: $0)
+            } else: {
+              ProgressView()
+            }
           }
         }
       }
@@ -112,23 +106,23 @@ struct NavigateAndLoadListView: View {
   }
 }
 
+// MARK: - SwiftUI previews
+
 struct NavigateAndLoadListView_Previews: PreviewProvider {
   static var previews: some View {
     NavigationView {
       NavigateAndLoadListView(
         store: Store(
-          initialState: NavigateAndLoadListState(
+          initialState: NavigateAndLoadList.State(
             rows: [
-              NavigateAndLoadListState.Row(count: 1, id: UUID()),
-              NavigateAndLoadListState.Row(count: 42, id: UUID()),
-              NavigateAndLoadListState.Row(count: 100, id: UUID()),
+              NavigateAndLoadList.State.Row(count: 1, id: UUID()),
+              NavigateAndLoadList.State.Row(count: 42, id: UUID()),
+              NavigateAndLoadList.State.Row(count: 100, id: UUID()),
             ]
-          ),
-          reducer: navigateAndLoadListReducer,
-          environment: NavigateAndLoadListEnvironment(
-            mainQueue: .main
           )
-        )
+        ) {
+          NavigateAndLoadList()
+        }
       )
     }
     .navigationViewStyle(.stack)

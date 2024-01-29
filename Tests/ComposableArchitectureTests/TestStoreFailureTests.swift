@@ -1,273 +1,277 @@
-import ComposableArchitecture
-import XCTest
+#if DEBUG
+  import ComposableArchitecture
+  import XCTest
 
-@MainActor
-final class TestStoreFailureTests: XCTestCase {
-  func testNoStateChangeFailure() {
-    enum Action { case first, second }
-    let store = TestStore(
-      initialState: 0,
-      reducer: Reducer<Int, Action, Void> { state, action, _ in
-        switch action {
-        case .first: return .init(value: .second)
-        case .second: return .none
+  @MainActor
+  final class TestStoreFailureTests: BaseTCATestCase {
+    func testNoStateChangeFailure() async {
+      enum Action { case first, second }
+      let store = TestStore(initialState: 0) {
+        Reduce<Int, Action> { state, action in
+          switch action {
+          case .first: return .send(.second)
+          case .second: return .none
+          }
         }
-      },
-      environment: ()
-    )
+      }
 
-    XCTExpectFailure {
-      _ = store.send(.first) { _ = $0 }
-    } issueMatcher: {
-      $0.compactDescription == """
-        Expected state to change, but no change occurred.
+      XCTExpectFailure {
+        $0.compactDescription == """
+          Expected state to change, but no change occurred.
 
-        The trailing closure made no observable modifications to state. If no change to state is \
-        expected, omit the trailing closure.
-        """
+          The trailing closure made no observable modifications to state. If no change to state is \
+          expected, omit the trailing closure.
+          """
+      }
+      await store.send(.first) { _ = $0 }
+
+      XCTExpectFailure {
+        $0.compactDescription == """
+          Expected state to change, but no change occurred.
+
+          The trailing closure made no observable modifications to state. If no change to state is \
+          expected, omit the trailing closure.
+          """
+      }
+      await store.receive(.second) { _ = $0 }
     }
 
-    XCTExpectFailure {
-      store.receive(.second) { _ = $0 }
-    } issueMatcher: {
-      $0.compactDescription == """
-        Expected state to change, but no change occurred.
-
-        The trailing closure made no observable modifications to state. If no change to state is \
-        expected, omit the trailing closure.
-        """
-    }
-  }
-
-  func testStateChangeFailure() {
-    struct State: Equatable { var count = 0 }
-    let store = TestStore(
-      initialState: .init(),
-      reducer: Reducer<State, Void, Void> { state, action, _ in state.count += 1
-        return .none
-      },
-      environment: ()
-    )
-
-    XCTExpectFailure {
-      _ = store.send(()) { $0.count = 0 }
-    } issueMatcher: {
-      $0.compactDescription == """
-        A state change does not match expectation: …
-
-            − TestStoreFailureTests.State(count: 0)
-            + TestStoreFailureTests.State(count: 1)
-
-        (Expected: −, Actual: +)
-        """
-    }
-  }
-
-  func testUnexpectedStateChangeOnSendFailure() {
-    struct State: Equatable { var count = 0 }
-    let store = TestStore(
-      initialState: .init(),
-      reducer: Reducer<State, Void, Void> { state, action, _ in state.count += 1
-        return .none
-      },
-      environment: ()
-    )
-
-    _ = XCTExpectFailure {
-      store.send(())
-    } issueMatcher: {
-      $0.compactDescription == """
-        State was not expected to change, but a change occurred: …
-
-            − TestStoreFailureTests.State(count: 0)
-            + TestStoreFailureTests.State(count: 1)
-
-        (Expected: −, Actual: +)
-        """
-    }
-  }
-
-  func testUnexpectedStateChangeOnReceiveFailure() {
-    struct State: Equatable { var count = 0 }
-    enum Action { case first, second }
-    let store = TestStore(
-      initialState: .init(),
-      reducer: Reducer<State, Action, Void> { state, action, _ in
-        switch action {
-        case .first: return .init(value: .second)
-        case .second:
+    func testStateChangeFailure() async {
+      struct State: Equatable { var count = 0 }
+      let store = TestStore(initialState: State()) {
+        Reduce<State, Void> { state, action in
           state.count += 1
           return .none
         }
-      },
-      environment: ()
-    )
-
-    store.send(.first)
-    XCTExpectFailure {
-      store.receive(.second)
-    } issueMatcher: {
-      $0.compactDescription == """
-        State was not expected to change, but a change occurred: …
-
-            − TestStoreFailureTests.State(count: 0)
-            + TestStoreFailureTests.State(count: 1)
-
-        (Expected: −, Actual: +)
-        """
-    }
-  }
-
-  func testReceivedActionAfterDeinit() {
-    XCTExpectFailure {
-      do {
-        enum Action { case first, second }
-        let store = TestStore(
-          initialState: 0,
-          reducer: Reducer<Int, Action, Void> { state, action, _ in
-            switch action {
-            case .first: return .init(value: .second)
-            case .second: return .none
-            }
-          },
-          environment: ()
-        )
-        store.send(.first)
       }
-    } issueMatcher: {
-      $0.compactDescription == """
-        The store received 1 unexpected action after this one: …
 
-        Unhandled actions: [
-          [0]: TestStoreFailureTests.Action.second
-        ]
-        """
-    }
-  }
+      XCTExpectFailure {
+        $0.compactDescription == """
+          A state change does not match expectation: …
 
-  func testEffectInFlightAfterDeinit() {
-    XCTExpectFailure {
-      do {
-        let store = TestStore(
-          initialState: 0,
-          reducer: Reducer<Int, Void, Void> { state, action, _ in
-            .task { try await Task.sleep(nanoseconds: NSEC_PER_SEC) }
-          },
-          environment: ()
-        )
-        store.send(())
+              − TestStoreFailureTests.State(count: 0)
+              + TestStoreFailureTests.State(count: 1)
+
+          (Expected: −, Actual: +)
+          """
       }
-    } issueMatcher: {
-      $0.compactDescription == """
-        An effect returned for this action is still running. It must complete before the end of the \
-        test. …
-
-        To fix, inspect any effects the reducer returns for this action and ensure that all of \
-        them complete by the end of the test. There are a few reasons why an effect may not have \
-        completed:
-
-        • If using async/await in your effect, it may need a little bit of time to properly \
-        finish. To fix you can simply perform "await store.finish()" at the end of your test.
-
-        • If an effect uses a scheduler (via "receive(on:)", "delay", "debounce", etc.), make sure \
-        that you wait enough time for the scheduler to perform the effect. If you are using a test \
-        scheduler, advance the scheduler so that the effects may complete, or consider using an \
-        immediate scheduler to immediately perform the effect instead.
-
-        • If you are returning a long-living effect (timers, notifications, subjects, etc.), then \
-        make sure those effects are torn down by marking the effect ".cancellable" and returning a \
-        corresponding cancellation effect ("Effect.cancel") from another action, or, if your \
-        effect is driven by a Combine subject, send it a completion.
-        """
+      await store.send(()) { $0.count = 0 }
     }
-  }
 
-  func testSendActionBeforeReceivingFailure() {
-    enum Action { case first, second }
-    let store = TestStore(
-      initialState: 0,
-      reducer: Reducer<Int, Action, Void> { state, action, _ in
-        switch action {
-        case .first: return .init(value: .second)
-        case .second: return .none
+    func testUnexpectedStateChangeOnSendFailure() async {
+      struct State: Equatable { var count = 0 }
+      let store = TestStore(initialState: State()) {
+        Reduce<State, Void> { state, action in
+          state.count += 1
+          return .none
         }
-      },
-      environment: ()
-    )
+      }
 
-    XCTExpectFailure {
-      store.send(.first)
-      store.send(.first)
-      store.receive(.second)
-      store.receive(.second)
-    } issueMatcher: { issue in
-      issue.compactDescription == """
-        Must handle 1 received action before sending an action: …
+      XCTExpectFailure {
+        $0.compactDescription == """
+          State was not expected to change, but a change occurred: …
 
-        Unhandled actions: [
-          [0]: TestStoreFailureTests.Action.second
-        ]
-        """
+              − TestStoreFailureTests.State(count: 0)
+              + TestStoreFailureTests.State(count: 1)
+
+          (Expected: −, Actual: +)
+          """
+      }
+      await store.send(())
     }
-  }
 
-  func testReceiveNonExistentActionFailure() {
-    enum Action { case action }
-    let store = TestStore(
-      initialState: 0,
-      reducer: Reducer<Int, Action, Void> { _, _, _ in .none },
-      environment: ()
-    )
-
-    XCTExpectFailure {
-      store.receive(.action)
-    } issueMatcher: { issue in
-      issue.compactDescription == "Expected to receive an action, but received none."
-    }
-  }
-
-  func testReceiveUnexpectedActionFailure() {
-    enum Action { case first, second }
-    let store = TestStore(
-      initialState: 0,
-      reducer: Reducer<Int, Action, Void> { state, action, _ in
-        switch action {
-        case .first: return .init(value: .second)
-        case .second: return .none
+    func testUnexpectedStateChangeOnReceiveFailure() async {
+      struct State: Equatable { var count = 0 }
+      enum Action { case first, second }
+      let store = TestStore(initialState: State()) {
+        Reduce<State, Action> { state, action in
+          switch action {
+          case .first: return .send(.second)
+          case .second:
+            state.count += 1
+            return .none
+          }
         }
-      },
-      environment: ()
-    )
+      }
 
-    XCTExpectFailure {
-      store.send(.first)
-      store.receive(.first)
-    } issueMatcher: { issue in
-      issue.compactDescription == """
-        Received unexpected action: …
+      await store.send(.first)
+      XCTExpectFailure {
+        $0.compactDescription == """
+          State was not expected to change, but a change occurred: …
 
-            − TestStoreFailureTests.Action.first
-            + TestStoreFailureTests.Action.second
+              − TestStoreFailureTests.State(count: 0)
+              + TestStoreFailureTests.State(count: 1)
 
-        (Expected: −, Received: +)
-        """
+          (Expected: −, Actual: +)
+          """
+      }
+      await store.receive(.second)
     }
-  }
 
-  func testModifyClosureThrowsErrorFailure() {
-    let store = TestStore(
-      initialState: 0,
-      reducer: Reducer<Int, Void, Void> { _, _, _ in .none },
-      environment: ()
-    )
+    func testReceivedActionAfterDeinit() async {
+      enum Action { case first, second }
+      let store = TestStore(initialState: 0) {
+        Reduce<Int, Action> { state, action in
+          switch action {
+          case .first: return .send(.second)
+          case .second: return .none
+          }
+        }
+      }
 
-    XCTExpectFailure {
-      _ = store.send(()) { _ in
+      XCTExpectFailure {
+        $0.compactDescription == """
+          The store received 1 unexpected action after this one: …
+
+            Unhandled actions:
+              • .second
+          """
+      }
+      await store.send(.first)
+    }
+
+    func testEffectInFlightAfterDeinit() async {
+      let store = TestStore(initialState: 0) {
+        Reduce<Int, Void> { state, action in
+          .run { _ in try await Task.never() }
+        }
+      }
+
+      XCTExpectFailure {
+        $0.compactDescription == """
+          An effect returned for this action is still running. It must complete before the end of \
+          the test. …
+
+          To fix, inspect any effects the reducer returns for this action and ensure that all of \
+          them complete by the end of the test. There are a few reasons why an effect may not have \
+          completed:
+
+          • If using async/await in your effect, it may need a little bit of time to properly \
+          finish. To fix you can simply perform "await store.finish()" at the end of your test.
+
+          • If an effect uses a clock/scheduler (via "receive(on:)", "delay", "debounce", etc.), \
+          make sure that you wait enough time for it to perform the effect. If you are using a \
+          test clock/scheduler, advance it so that the effects may complete, or consider using an \
+          immediate clock/scheduler to immediately perform the effect instead.
+
+          • If you are returning a long-living effect (timers, notifications, subjects, etc.), \
+          then make sure those effects are torn down by marking the effect ".cancellable" and \
+          returning a corresponding cancellation effect ("Effect.cancel") from another action, or, \
+          if your effect is driven by a Combine subject, send it a completion.
+          """
+      }
+      await store.send(())
+    }
+
+    func testSendActionBeforeReceivingFailure() async {
+      enum Action { case first, second }
+      let store = TestStore(initialState: 0) {
+        Reduce<Int, Action> { state, action in
+          switch action {
+          case .first: return .send(.second)
+          case .second: return .none
+          }
+        }
+      }
+
+      await store.send(.first)
+
+      XCTExpectFailure {
+        $0.compactDescription == """
+          Must handle 1 received action before sending an action: …
+
+          Unhandled actions: [
+            [0]: .second
+          ]
+          """
+      }
+      await store.send(.first)
+
+      await store.receive(.second)
+      await store.receive(.second)
+    }
+
+    func testReceiveNonExistentActionFailure() async {
+      enum Action { case action }
+      let store = TestStore(initialState: 0) {
+        Reduce<Int, Action> { _, _ in .none }
+      }
+
+      XCTExpectFailure {
+        $0.compactDescription == """
+          Expected to receive the following action, but didn't: …
+
+            TestStoreFailureTests.Action.action
+          """
+      }
+      await store.receive(.action)
+    }
+
+    func testReceiveUnexpectedActionFailure() async {
+      enum Action { case first, second }
+      let store = TestStore(initialState: 0) {
+        Reduce<Int, Action> { state, action in
+          switch action {
+          case .first:
+            return .send(.second)
+          case .second:
+            state += 1
+            return .none
+          }
+        }
+      }
+
+      await store.send(.first)
+
+      XCTExpectFailure {
+        $0.compactDescription == """
+          Received unexpected action: …
+
+              − TestStoreFailureTests.Action.first
+              + TestStoreFailureTests.Action.second
+
+          (Expected: −, Received: +)
+          """
+      }
+      await store.receive(.first)
+    }
+
+    func testModifyClosureThrowsErrorFailure() async {
+      let store = TestStore(initialState: 0) {
+        Reduce<Int, Void> { _, _ in .none }
+      }
+
+      XCTExpectFailure {
+        $0.compactDescription == "Threw error: SomeError()"
+      }
+      await store.send(()) { _ in
         struct SomeError: Error {}
         throw SomeError()
       }
-    } issueMatcher: { issue in
-      issue.compactDescription == "Threw error: SomeError()"
+    }
+
+    func testExpectedStateEqualityMustModify() async {
+      let store = TestStore(initialState: 0) {
+        Reduce<Int, Bool> { state, action in
+          switch action {
+          case true: return .send(false)
+          case false: return .none
+          }
+        }
+      }
+
+      await store.send(true)
+      await store.receive(false)
+
+      XCTExpectFailure()
+      await store.send(true) {
+        $0 = 0
+      }
+
+      XCTExpectFailure()
+      await store.receive(false) {
+        $0 = 0
+      }
     }
   }
-}
+#endif

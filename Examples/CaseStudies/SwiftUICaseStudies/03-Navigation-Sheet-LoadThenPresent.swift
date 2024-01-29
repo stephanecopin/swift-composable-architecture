@@ -9,117 +9,90 @@ private let readMe = """
   depends on this data.
   """
 
-struct LoadThenPresentState: Equatable {
-  var optionalCounter: CounterState?
-  var isActivityIndicatorVisible = false
+// MARK: - Feature domain
 
-  var isSheetPresented: Bool { self.optionalCounter != nil }
-}
+@Reducer
+struct LoadThenPresent {
+  @ObservableState
+  struct State: Equatable {
+    @Presents var counter: Counter.State?
+    var isActivityIndicatorVisible = false
+  }
 
-enum LoadThenPresentAction {
-  case onDisappear
-  case optionalCounter(CounterAction)
-  case setSheet(isPresented: Bool)
-  case setSheetIsPresentedDelayCompleted
-}
+  enum Action {
+    case counter(PresentationAction<Counter.Action>)
+    case counterButtonTapped
+    case counterPresentationDelayCompleted
+  }
 
-struct LoadThenPresentEnvironment {
-  var mainQueue: AnySchedulerOf<DispatchQueue>
-}
+  @Dependency(\.continuousClock) var clock
 
-let loadThenPresentReducer =
-  counterReducer
-  .optional()
-  .pullback(
-    state: \.optionalCounter,
-    action: /LoadThenPresentAction.optionalCounter,
-    environment: { _ in CounterEnvironment() }
-  )
-  .combined(
-    with: Reducer<
-      LoadThenPresentState, LoadThenPresentAction, LoadThenPresentEnvironment
-    > { state, action, environment in
-
-      enum CancelID {}
-
+  var body: some Reducer<State, Action> {
+    Reduce { state, action in
       switch action {
-      case .onDisappear:
-        return .cancel(id: CancelID.self)
+      case .counter:
+        return .none
 
-      case .setSheet(isPresented: true):
+      case .counterButtonTapped:
         state.isActivityIndicatorVisible = true
-        return .task {
-          try await environment.mainQueue.sleep(for: 1)
-          return .setSheetIsPresentedDelayCompleted
+        return .run { send in
+          try await self.clock.sleep(for: .seconds(1))
+          await send(.counterPresentationDelayCompleted)
         }
-        .cancellable(id: CancelID.self)
 
-      case .setSheet(isPresented: false):
-        state.optionalCounter = nil
-        return .none
-
-      case .setSheetIsPresentedDelayCompleted:
+      case .counterPresentationDelayCompleted:
         state.isActivityIndicatorVisible = false
-        state.optionalCounter = CounterState()
+        state.counter = Counter.State()
         return .none
 
-      case .optionalCounter:
-        return .none
       }
     }
-  )
-
-struct LoadThenPresentView: View {
-  let store: Store<LoadThenPresentState, LoadThenPresentAction>
-
-  var body: some View {
-    WithViewStore(self.store) { viewStore in
-      Form {
-        Section {
-          AboutView(readMe: readMe)
-        }
-        Button(action: { viewStore.send(.setSheet(isPresented: true)) }) {
-          HStack {
-            Text("Load optional counter")
-            if viewStore.isActivityIndicatorVisible {
-              Spacer()
-              ProgressView()
-            }
-          }
-        }
-      }
-      .sheet(
-        isPresented: viewStore.binding(
-          get: \.isSheetPresented,
-          send: LoadThenPresentAction.setSheet(isPresented:)
-        )
-      ) {
-        IfLetStore(
-          self.store.scope(
-            state: \.optionalCounter,
-            action: LoadThenPresentAction.optionalCounter
-          )
-        ) {
-          CounterView(store: $0)
-        }
-      }
-      .navigationTitle("Load and present")
-      .onDisappear { viewStore.send(.onDisappear) }
+    .ifLet(\.$counter, action: \.counter) {
+      Counter()
     }
   }
 }
+
+// MARK: - Feature view
+
+struct LoadThenPresentView: View {
+  @Bindable var store = Store(initialState: LoadThenPresent.State()) {
+    LoadThenPresent()
+  }
+
+  var body: some View {
+    Form {
+      Section {
+        AboutView(readMe: readMe)
+      }
+      Button {
+        store.send(.counterButtonTapped)
+      } label: {
+        HStack {
+          Text("Load optional counter")
+          if store.isActivityIndicatorVisible {
+            Spacer()
+            ProgressView()
+          }
+        }
+      }
+    }
+    .sheet(item: $store.scope(state: \.counter, action: \.counter)) { store in
+      CounterView(store: store)
+    }
+    .navigationTitle("Load and present")
+  }
+}
+
+// MARK: - SwiftUI previews
 
 struct LoadThenPresentView_Previews: PreviewProvider {
   static var previews: some View {
     NavigationView {
       LoadThenPresentView(
-        store: Store(
-          initialState: LoadThenPresentState(),
-          reducer: loadThenPresentReducer,
-          environment: LoadThenPresentEnvironment(
-            mainQueue: .main
-          )
-        )
+        store: Store(initialState: LoadThenPresent.State()) {
+          LoadThenPresent()
+        }
       )
     }
   }

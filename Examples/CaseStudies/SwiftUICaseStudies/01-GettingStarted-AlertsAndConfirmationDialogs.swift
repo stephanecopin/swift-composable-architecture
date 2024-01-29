@@ -19,106 +19,123 @@ private let readMe = """
   alerts and dialogs in your application
   """
 
-struct AlertAndConfirmationDialogState: Equatable {
-  var alert: AlertState<AlertAndConfirmationDialogAction>?
-  var confirmationDialog: ConfirmationDialogState<AlertAndConfirmationDialogAction>?
-  var count = 0
-}
+// MARK: - Feature domain
 
-enum AlertAndConfirmationDialogAction: Equatable {
-  case alertButtonTapped
-  case alertDismissed
-  case confirmationDialogButtonTapped
-  case confirmationDialogDismissed
-  case decrementButtonTapped
-  case incrementButtonTapped
-}
-
-struct AlertAndConfirmationDialogEnvironment {}
-
-let alertAndConfirmationDialogReducer = Reducer<
-  AlertAndConfirmationDialogState, AlertAndConfirmationDialogAction,
-  AlertAndConfirmationDialogEnvironment
-> { state, action, _ in
-
-  switch action {
-  case .alertButtonTapped:
-    state.alert = AlertState(
-      title: TextState("Alert!"),
-      message: TextState("This is an alert"),
-      primaryButton: .cancel(TextState("Cancel")),
-      secondaryButton: .default(TextState("Increment"), action: .send(.incrementButtonTapped))
-    )
-    return .none
-
-  case .alertDismissed:
-    state.alert = nil
-    return .none
-
-  case .confirmationDialogButtonTapped:
-    state.confirmationDialog = ConfirmationDialogState(
-      title: TextState("Confirmation dialog"),
-      message: TextState("This is a confirmation dialog."),
-      buttons: [
-        .cancel(TextState("Cancel")),
-        .default(TextState("Increment"), action: .send(.incrementButtonTapped)),
-        .default(TextState("Decrement"), action: .send(.decrementButtonTapped)),
-      ]
-    )
-    return .none
-
-  case .confirmationDialogDismissed:
-    state.confirmationDialog = nil
-    return .none
-
-  case .decrementButtonTapped:
-    state.alert = AlertState(title: TextState("Decremented!"))
-    state.count -= 1
-    return .none
-
-  case .incrementButtonTapped:
-    state.alert = AlertState(title: TextState("Incremented!"))
-    state.count += 1
-    return .none
+@Reducer
+struct AlertAndConfirmationDialog {
+  @ObservableState
+  struct State: Equatable {
+    @Presents var alert: AlertState<Action.Alert>?
+    @Presents var confirmationDialog: ConfirmationDialogState<Action.ConfirmationDialog>?
+    var count = 0
   }
-}
 
-struct AlertAndConfirmationDialogView: View {
-  let store: Store<AlertAndConfirmationDialogState, AlertAndConfirmationDialogAction>
+  enum Action {
+    case alert(PresentationAction<Alert>)
+    case alertButtonTapped
+    case confirmationDialog(PresentationAction<ConfirmationDialog>)
+    case confirmationDialogButtonTapped
 
-  var body: some View {
-    WithViewStore(self.store) { viewStore in
-      Form {
-        Section {
-          AboutView(readMe: readMe)
+    enum Alert {
+      case incrementButtonTapped
+    }
+    enum ConfirmationDialog {
+      case incrementButtonTapped
+      case decrementButtonTapped
+    }
+  }
+
+  var body: some Reducer<State, Action> {
+    Reduce { state, action in
+      switch action {
+      case .alert(.presented(.incrementButtonTapped)),
+        .confirmationDialog(.presented(.incrementButtonTapped)):
+        state.alert = AlertState { TextState("Incremented!") }
+        state.count += 1
+        return .none
+
+      case .alert:
+        return .none
+
+      case .alertButtonTapped:
+        state.alert = AlertState {
+          TextState("Alert!")
+        } actions: {
+          ButtonState(role: .cancel) {
+            TextState("Cancel")
+          }
+          ButtonState(action: .incrementButtonTapped) {
+            TextState("Increment")
+          }
+        } message: {
+          TextState("This is an alert")
         }
+        return .none
 
-        Text("Count: \(viewStore.count)")
-        Button("Alert") { viewStore.send(.alertButtonTapped) }
-        Button("Confirmation Dialog") { viewStore.send(.confirmationDialogButtonTapped) }
+      case .confirmationDialog(.presented(.decrementButtonTapped)):
+        state.alert = AlertState { TextState("Decremented!") }
+        state.count -= 1
+        return .none
+
+      case .confirmationDialog:
+        return .none
+
+      case .confirmationDialogButtonTapped:
+        state.confirmationDialog = ConfirmationDialogState {
+          TextState("Confirmation dialog")
+        } actions: {
+          ButtonState(role: .cancel) {
+            TextState("Cancel")
+          }
+          ButtonState(action: .incrementButtonTapped) {
+            TextState("Increment")
+          }
+          ButtonState(action: .decrementButtonTapped) {
+            TextState("Decrement")
+          }
+        } message: {
+          TextState("This is a confirmation dialog.")
+        }
+        return .none
       }
     }
-    .navigationTitle("Alerts & Dialogs")
-    .alert(
-      self.store.scope(state: \.alert),
-      dismiss: .alertDismissed
-    )
-    .confirmationDialog(
-      self.store.scope(state: \.confirmationDialog),
-      dismiss: .confirmationDialogDismissed
-    )
+    .ifLet(\.$alert, action: \.alert)
+    .ifLet(\.$confirmationDialog, action: \.confirmationDialog)
   }
 }
+
+// MARK: - Feature view
+
+struct AlertAndConfirmationDialogView: View {
+  @Bindable var store = Store(initialState: AlertAndConfirmationDialog.State()) {
+    AlertAndConfirmationDialog()
+  }
+
+  var body: some View {
+    Form {
+      Section {
+        AboutView(readMe: readMe)
+      }
+
+      Text("Count: \(store.count)")
+      Button("Alert") { store.send(.alertButtonTapped) }
+      Button("Confirmation Dialog") { store.send(.confirmationDialogButtonTapped) }
+    }
+    .navigationTitle("Alerts & Dialogs")
+    .alert($store.scope(state: \.alert, action: \.alert))
+    .confirmationDialog($store.scope(state: \.confirmationDialog, action: \.confirmationDialog))
+  }
+}
+
+// MARK: - SwiftUI previews
 
 struct AlertAndConfirmationDialog_Previews: PreviewProvider {
   static var previews: some View {
     NavigationView {
       AlertAndConfirmationDialogView(
-        store: Store(
-          initialState: AlertAndConfirmationDialogState(),
-          reducer: alertAndConfirmationDialogReducer,
-          environment: AlertAndConfirmationDialogEnvironment()
-        )
+        store: Store(initialState: AlertAndConfirmationDialog.State()) {
+          AlertAndConfirmationDialog()
+        }
       )
     }
   }

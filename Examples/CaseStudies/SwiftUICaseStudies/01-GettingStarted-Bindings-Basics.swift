@@ -18,94 +18,91 @@ private let readMe = """
   component changes, which means you can keep using a unidirectional style for your feature.
   """
 
-// The state for this screen holds a bunch of values that will drive
-struct BindingBasicsState: Equatable {
-  var sliderValue = 5.0
-  var stepCount = 10
-  var text = ""
-  var toggleIsOn = false
-}
+// MARK: - Feature domain
 
-enum BindingBasicsAction {
-  case sliderValueChanged(Double)
-  case stepCountChanged(Int)
-  case textChanged(String)
-  case toggleChanged(isOn: Bool)
-}
+@Reducer
+struct BindingBasics {
+  @ObservableState
+  struct State: Equatable {
+    var sliderValue = 5.0
+    var stepCount = 10
+    var text = ""
+    var toggleIsOn = false
+  }
 
-struct BindingBasicsEnvironment {}
+  enum Action {
+    case sliderValueChanged(Double)
+    case stepCountChanged(Int)
+    case textChanged(String)
+    case toggleChanged(isOn: Bool)
+  }
 
-let bindingBasicsReducer = Reducer<
-  BindingBasicsState, BindingBasicsAction, BindingBasicsEnvironment
-> {
-  state, action, _ in
-  switch action {
-  case let .sliderValueChanged(value):
-    state.sliderValue = value
-    return .none
+  var body: some Reducer<State, Action> {
+    Reduce { state, action in
+      switch action {
+      case let .sliderValueChanged(value):
+        state.sliderValue = value
+        return .none
 
-  case let .stepCountChanged(count):
-    state.sliderValue = .minimum(state.sliderValue, Double(count))
-    state.stepCount = count
-    return .none
+      case let .stepCountChanged(count):
+        state.sliderValue = .minimum(state.sliderValue, Double(count))
+        state.stepCount = count
+        return .none
 
-  case let .textChanged(text):
-    state.text = text
-    return .none
+      case let .textChanged(text):
+        state.text = text
+        return .none
 
-  case let .toggleChanged(isOn):
-    state.toggleIsOn = isOn
-    return .none
+      case let .toggleChanged(isOn):
+        state.toggleIsOn = isOn
+        return .none
+      }
+    }
   }
 }
 
+// MARK: - Feature view
+
 struct BindingBasicsView: View {
-  let store: Store<BindingBasicsState, BindingBasicsAction>
+  @Bindable var store = Store(initialState: BindingBasics.State()) {
+    BindingBasics()
+  }
 
   var body: some View {
-    WithViewStore(self.store) { viewStore in
-      Form {
-        Section {
-          AboutView(readMe: readMe)
-        }
-
-        HStack {
-          TextField(
-            "Type here",
-            text: viewStore.binding(get: \.text, send: BindingBasicsAction.textChanged)
-          )
-          .disableAutocorrection(true)
-          .foregroundStyle(viewStore.toggleIsOn ? Color.secondary : .primary)
-          Text(alternate(viewStore.text))
-        }
-        .disabled(viewStore.toggleIsOn)
-
-        Toggle(
-          "Disable other controls",
-          isOn: viewStore.binding(get: \.toggleIsOn, send: BindingBasicsAction.toggleChanged)
-            .resignFirstResponder()
-        )
-
-        Stepper(
-          "Max slider value: \(viewStore.stepCount)",
-          value: viewStore.binding(get: \.stepCount, send: BindingBasicsAction.stepCountChanged),
-          in: 0...100
-        )
-        .disabled(viewStore.toggleIsOn)
-
-        HStack {
-          Text("Slider value: \(Int(viewStore.sliderValue))")
-          Slider(
-            value: viewStore.binding(
-              get: \.sliderValue,
-              send: BindingBasicsAction.sliderValueChanged
-            ),
-            in: 0...Double(viewStore.stepCount)
-          )
-          .tint(.accentColor)
-        }
-        .disabled(viewStore.toggleIsOn)
+    Form {
+      Section {
+        AboutView(readMe: readMe)
       }
+
+      HStack {
+        TextField("Type here", text: $store.text.sending(\.textChanged))
+          .disableAutocorrection(true)
+          .foregroundStyle(store.toggleIsOn ? Color.secondary : .primary)
+        Text(alternate(store.text))
+      }
+      .disabled(store.toggleIsOn)
+
+      Toggle(
+        "Disable other controls",
+        isOn: $store.toggleIsOn.sending(\.toggleChanged).resignFirstResponder()
+      )
+
+      Stepper(
+        "Max slider value: \(store.stepCount)",
+        value: $store.stepCount.sending(\.stepCountChanged),
+        in: 0...100
+      )
+      .disabled(store.toggleIsOn)
+
+      HStack {
+        Text("Slider value: \(Int(store.sliderValue))")
+        Slider(
+          value: $store.sliderValue.sending(\.sliderValueChanged),
+          in: 0...Double(store.stepCount)
+        )
+        .tint(.accentColor)
+      }
+      .disabled(store.toggleIsOn)
     }
     .monospacedDigit()
     .navigationTitle("Bindings basics")
@@ -123,15 +120,15 @@ private func alternate(_ string: String) -> String {
     .joined()
 }
 
+// MARK: - SwiftUI previews
+
 struct BindingBasicsView_Previews: PreviewProvider {
   static var previews: some View {
     NavigationView {
       BindingBasicsView(
-        store: Store(
-          initialState: BindingBasicsState(),
-          reducer: bindingBasicsReducer,
-          environment: BindingBasicsEnvironment()
-        )
+        store: Store(initialState: BindingBasics.State()) {
+          BindingBasics()
+        }
       )
     }
   }

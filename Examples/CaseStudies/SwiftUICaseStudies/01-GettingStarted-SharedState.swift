@@ -14,240 +14,233 @@ private let readMe = """
   can be reset from the other tab.
   """
 
-struct SharedState: Equatable {
-  var counter = CounterState()
-  var currentTab = Tab.counter
+// MARK: - Feature domain
 
-  enum Tab { case counter, profile }
-
-  struct CounterState: Equatable {
-    var alert: AlertState<SharedStateAction.CounterAction>?
-    var count = 0
-    var maxCount = 0
-    var minCount = 0
-    var numberOfCounts = 0
+@Reducer
+struct CounterTab {
+  @ObservableState
+  struct State: Equatable {
+    @Presents var alert: AlertState<Action.Alert>?
+    var stats = Stats()
   }
 
-  // The ProfileState can be derived from the CounterState by getting and setting the parts it cares
-  // about. This allows the profile feature to operate on a subset of app state instead of the whole
-  // thing.
-  var profile: ProfileState {
-    get {
-      ProfileState(
-        currentTab: self.currentTab,
-        count: self.counter.count,
-        maxCount: self.counter.maxCount,
-        minCount: self.counter.minCount,
-        numberOfCounts: self.counter.numberOfCounts
-      )
-    }
-    set {
-      self.currentTab = newValue.currentTab
-      self.counter.count = newValue.count
-      self.counter.maxCount = newValue.maxCount
-      self.counter.minCount = newValue.minCount
-      self.counter.numberOfCounts = newValue.numberOfCounts
-    }
-  }
-
-  struct ProfileState: Equatable {
-    private(set) var currentTab: Tab
-    private(set) var count = 0
-    private(set) var maxCount: Int
-    private(set) var minCount: Int
-    private(set) var numberOfCounts: Int
-
-    fileprivate mutating func resetCount() {
-      self.currentTab = .counter
-      self.count = 0
-      self.maxCount = 0
-      self.minCount = 0
-      self.numberOfCounts = 0
-    }
-  }
-}
-
-enum SharedStateAction: Equatable {
-  case counter(CounterAction)
-  case profile(ProfileAction)
-  case selectTab(SharedState.Tab)
-
-  enum CounterAction: Equatable {
-    case alertDismissed
+  enum Action {
+    case alert(PresentationAction<Alert>)
     case decrementButtonTapped
     case incrementButtonTapped
     case isPrimeButtonTapped
+
+    enum Alert: Equatable {}
   }
 
-  enum ProfileAction: Equatable {
-    case resetCounterButtonTapped
-  }
-}
+  var body: some Reducer<State, Action> {
+    Reduce { state, action in
+      switch action {
+      case .alert:
+        return .none
 
-let sharedStateCounterReducer = Reducer<
-  SharedState.CounterState, SharedStateAction.CounterAction, Void
-> { state, action, _ in
-  switch action {
-  case .alertDismissed:
-    state.alert = nil
-    return .none
+      case .decrementButtonTapped:
+        state.stats.decrement()
+        return .none
 
-  case .decrementButtonTapped:
-    state.count -= 1
-    state.numberOfCounts += 1
-    state.minCount = min(state.minCount, state.count)
-    return .none
+      case .incrementButtonTapped:
+        state.stats.increment()
+        return .none
 
-  case .incrementButtonTapped:
-    state.count += 1
-    state.numberOfCounts += 1
-    state.maxCount = max(state.maxCount, state.count)
-    return .none
-
-  case .isPrimeButtonTapped:
-    state.alert = AlertState(
-      title: TextState(
-        isPrime(state.count)
-          ? "👍 The number \(state.count) is prime!"
-          : "👎 The number \(state.count) is not prime :("
-      )
-    )
-    return .none
-  }
-}
-
-let sharedStateProfileReducer = Reducer<
-  SharedState.ProfileState, SharedStateAction.ProfileAction, Void
-> { state, action, _ in
-  switch action {
-  case .resetCounterButtonTapped:
-    state.resetCount()
-    return .none
-  }
-}
-
-let sharedStateReducer = Reducer<SharedState, SharedStateAction, Void>.combine(
-  sharedStateCounterReducer.pullback(
-    state: \SharedState.counter,
-    action: /SharedStateAction.counter,
-    environment: { _ in () }
-  ),
-  sharedStateProfileReducer.pullback(
-    state: \SharedState.profile,
-    action: /SharedStateAction.profile,
-    environment: { _ in () }
-  ),
-  Reducer { state, action, _ in
-    switch action {
-    case .counter, .profile:
-      return .none
-    case let .selectTab(tab):
-      state.currentTab = tab
-      return .none
-    }
-  }
-)
-
-struct SharedStateView: View {
-  let store: Store<SharedState, SharedStateAction>
-
-  var body: some View {
-    WithViewStore(self.store.scope(state: \.currentTab)) { viewStore in
-      VStack {
-        Picker(
-          "Tab",
-          selection: viewStore.binding(send: SharedStateAction.selectTab)
-        ) {
-          Text("Counter")
-            .tag(SharedState.Tab.counter)
-
-          Text("Profile")
-            .tag(SharedState.Tab.profile)
+      case .isPrimeButtonTapped:
+        state.alert = AlertState {
+          TextState(
+            isPrime(state.stats.count)
+              ? "👍 The number \(state.stats.count) is prime!"
+              : "👎 The number \(state.stats.count) is not prime :("
+          )
         }
-        .pickerStyle(.segmented)
-
-        if viewStore.state == .counter {
-          SharedStateCounterView(
-            store: self.store.scope(state: \.counter, action: SharedStateAction.counter))
-        }
-
-        if viewStore.state == .profile {
-          SharedStateProfileView(
-            store: self.store.scope(state: \.profile, action: SharedStateAction.profile))
-        }
-
-        Spacer()
+        return .none
       }
     }
-    .padding()
+    .ifLet(\.$alert, action: \.alert)
   }
 }
 
-struct SharedStateCounterView: View {
-  let store: Store<SharedState.CounterState, SharedStateAction.CounterAction>
+struct CounterTabView: View {
+  @Bindable var store: StoreOf<CounterTab>
 
   var body: some View {
-    WithViewStore(self.store) { viewStore in
-      VStack(spacing: 64) {
-        Text(template: readMe, .caption)
+    Form {
+      Text(template: readMe, .caption)
 
-        VStack(spacing: 16) {
-          HStack {
-            Button {
-              viewStore.send(.decrementButtonTapped)
-            } label: {
-              Image(systemName: "minus")
-            }
-
-            Text("\(viewStore.count)")
-              .monospacedDigit()
-
-            Button {
-              viewStore.send(.incrementButtonTapped)
-            } label: {
-              Image(systemName: "plus")
-            }
+      VStack(spacing: 16) {
+        HStack {
+          Button {
+            store.send(.decrementButtonTapped)
+          } label: {
+            Image(systemName: "minus")
           }
 
-          Button("Is this prime?") { viewStore.send(.isPrimeButtonTapped) }
+          Text("\(store.stats.count)")
+            .monospacedDigit()
+
+          Button {
+            store.send(.incrementButtonTapped)
+          } label: {
+            Image(systemName: "plus")
+          }
         }
+
+        Button("Is this prime?") { store.send(.isPrimeButtonTapped) }
       }
-      .padding(.top)
-      .navigationTitle("Shared State Demo")
-      .alert(self.store.scope(state: \.alert), dismiss: .alertDismissed)
+    }
+    .buttonStyle(.borderless)
+    .navigationTitle("Shared State Demo")
+    .alert($store.scope(state: \.alert, action: \.alert))
+  }
+}
+
+@Reducer
+struct ProfileTab {
+  @ObservableState
+  struct State: Equatable {
+    var stats = Stats()
+  }
+
+  enum Action {
+    case resetStatsButtonTapped
+  }
+
+  var body: some Reducer<State, Action> {
+    Reduce { state, action in
+      switch action {
+      case .resetStatsButtonTapped:
+        state.stats.reset()
+        return .none
+      }
     }
   }
 }
 
-struct SharedStateProfileView: View {
-  let store: Store<SharedState.ProfileState, SharedStateAction.ProfileAction>
+struct ProfileTabView: View {
+  let store: StoreOf<ProfileTab>
 
   var body: some View {
-    WithViewStore(self.store) { viewStore in
-      VStack(spacing: 64) {
-        Text(
-          template: """
-            This tab shows state from the previous tab, and it is capable of reseting all of the \
-            state back to 0.
+    Form {
+      Text(
+        template: """
+          This tab shows state from the previous tab, and it is capable of reseting all of the \
+          state back to 0.
 
-            This shows that it is possible for each screen to model its state in the way that makes \
-            the most sense for it, while still allowing the state and mutations to be shared \
-            across independent screens.
-            """,
-          .caption
-        )
+          This shows that it is possible for each screen to model its state in the way that makes \
+          the most sense for it, while still allowing the state and mutations to be shared \
+          across independent screens.
+          """,
+        .caption
+      )
 
-        VStack(spacing: 16) {
-          Text("Current count: \(viewStore.count)")
-          Text("Max count: \(viewStore.maxCount)")
-          Text("Min count: \(viewStore.minCount)")
-          Text("Total number of count events: \(viewStore.numberOfCounts)")
-          Button("Reset") { viewStore.send(.resetCounterButtonTapped) }
-        }
+      VStack(spacing: 16) {
+        Text("Current count: \(store.stats.count)")
+        Text("Max count: \(store.stats.maxCount)")
+        Text("Min count: \(store.stats.minCount)")
+        Text("Total number of count events: \(store.stats.numberOfCounts)")
+        Button("Reset") { store.send(.resetStatsButtonTapped) }
       }
-      .padding(.top)
-      .navigationTitle("Profile")
     }
+    .buttonStyle(.borderless)
+    .navigationTitle("Profile")
+  }
+}
+
+@Reducer
+struct SharedState {
+  enum Tab { case counter, profile }
+
+  @ObservableState
+  struct State: Equatable {
+    var currentTab = Tab.counter
+    var counter = CounterTab.State()
+    var profile = ProfileTab.State()
+  }
+
+  enum Action {
+    case counter(CounterTab.Action)
+    case profile(ProfileTab.Action)
+    case selectTab(Tab)
+  }
+
+  var body: some Reducer<State, Action> {
+    Scope(state: \.counter, action: \.counter) {
+      CounterTab()
+    }
+    .onChange(of: \.counter.stats) { _, stats in
+      Reduce { state, _ in
+        state.profile.stats = stats
+        return .none
+      }
+    }
+
+    Scope(state: \.profile, action: \.profile) {
+      ProfileTab()
+    }
+    .onChange(of: \.profile.stats) { _, stats in
+      Reduce { state, _ in
+        state.counter.stats = stats
+        return .none
+      }
+    }
+
+    Reduce { state, action in
+      switch action {
+      case .counter, .profile:
+        return .none
+      case let .selectTab(tab):
+        state.currentTab = tab
+        return .none
+      }
+    }
+  }
+}
+
+struct SharedStateView: View {
+  @State var store = Store(initialState: SharedState.State()) {
+    SharedState()
+  }
+
+  var body: some View {
+    TabView(selection: $store.currentTab.sending(\.selectTab)) {
+      NavigationStack {
+        CounterTabView(
+          store: self.store.scope(state: \.counter, action: \.counter)
+        )
+      }
+      .tag(SharedState.Tab.counter)
+      .tabItem { Text("Counter") }
+
+      NavigationStack {
+        ProfileTabView(
+          store: self.store.scope(state: \.profile, action: \.profile)
+        )
+      }
+      .tag(SharedState.Tab.profile)
+      .tabItem { Text("Profile") }
+    }
+  }
+}
+
+struct Stats: Equatable {
+  private(set) var count = 0
+  private(set) var maxCount = 0
+  private(set) var minCount = 0
+  private(set) var numberOfCounts = 0
+  mutating func increment() {
+    count += 1
+    numberOfCounts += 1
+    maxCount = max(minCount, count)
+  }
+  mutating func decrement() {
+    count -= 1
+    numberOfCounts += 1
+    minCount = min(minCount, count)
+  }
+  mutating func reset() {
+    self = Self()
   }
 }
 
@@ -255,13 +248,7 @@ struct SharedStateProfileView: View {
 
 struct SharedState_Previews: PreviewProvider {
   static var previews: some View {
-    SharedStateView(
-      store: Store(
-        initialState: SharedState(),
-        reducer: sharedStateReducer,
-        environment: ()
-      )
-    )
+    SharedStateView()
   }
 }
 

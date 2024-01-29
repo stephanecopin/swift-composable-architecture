@@ -1,18 +1,26 @@
-import Combine
 import ComposableArchitecture
 import Foundation
 
+@DependencyClient
 struct DownloadClient {
-  var download: @Sendable (URL) -> AsyncThrowingStream<Event, Error>
+  var download: @Sendable (_ url: URL) -> AsyncThrowingStream<Event, Error> = { _ in .finished() }
 
+  @CasePathable
   enum Event: Equatable {
     case response(Data)
     case updateProgress(Double)
   }
 }
 
-extension DownloadClient {
-  static let live = DownloadClient(
+extension DependencyValues {
+  var downloadClient: DownloadClient {
+    get { self[DownloadClient.self] }
+    set { self[DownloadClient.self] = newValue }
+  }
+}
+
+extension DownloadClient: DependencyKey {
+  static let liveValue = Self(
     download: { url in
       .init { continuation in
         Task {
@@ -38,4 +46,6 @@ extension DownloadClient {
       }
     }
   )
+
+  static let testValue = Self()
 }

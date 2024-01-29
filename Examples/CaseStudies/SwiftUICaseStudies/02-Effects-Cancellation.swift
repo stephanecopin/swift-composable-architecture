@@ -1,4 +1,3 @@
-import Combine
 import ComposableArchitecture
 import SwiftUI
 
@@ -13,111 +12,107 @@ private let readMe = """
   request is in-flight will also cancel it.
   """
 
-// MARK: - Demo app domain
+// MARK: - Feature domain
 
-struct EffectsCancellationState: Equatable {
-  var count = 0
-  var currentFact: String?
-  var isFactRequestInFlight = false
-}
+@Reducer
+struct EffectsCancellation {
+  @ObservableState
+  struct State: Equatable {
+    var count = 0
+    var currentFact: String?
+    var isFactRequestInFlight = false
+  }
 
-enum EffectsCancellationAction: Equatable {
-  case cancelButtonTapped
-  case stepperChanged(Int)
-  case factButtonTapped
-  case factResponse(TaskResult<String>)
-}
+  enum Action {
+    case cancelButtonTapped
+    case stepperChanged(Int)
+    case factButtonTapped
+    case factResponse(Result<String, Error>)
+  }
 
-struct EffectsCancellationEnvironment {
-  var fact: FactClient
-}
+  @Dependency(\.factClient) var factClient
+  private enum CancelID { case factRequest }
 
-// MARK: - Business logic
+  var body: some Reducer<State, Action> {
+    Reduce { state, action in
+      switch action {
+      case .cancelButtonTapped:
+        state.isFactRequestInFlight = false
+        return .cancel(id: CancelID.factRequest)
 
-let effectsCancellationReducer = Reducer<
-  EffectsCancellationState, EffectsCancellationAction, EffectsCancellationEnvironment
-> { state, action, environment in
+      case let .stepperChanged(value):
+        state.count = value
+        state.currentFact = nil
+        state.isFactRequestInFlight = false
+        return .cancel(id: CancelID.factRequest)
 
-  enum NumberFactRequestID {}
+      case .factButtonTapped:
+        state.currentFact = nil
+        state.isFactRequestInFlight = true
 
-  switch action {
-  case .cancelButtonTapped:
-    state.isFactRequestInFlight = false
-    return .cancel(id: NumberFactRequestID.self)
+        return .run { [count = state.count] send in
+          await send(.factResponse(Result { try await self.factClient.fetch(count) }))
+        }
+        .cancellable(id: CancelID.factRequest)
 
-  case let .stepperChanged(value):
-    state.count = value
-    state.currentFact = nil
-    state.isFactRequestInFlight = false
-    return .cancel(id: NumberFactRequestID.self)
+      case let .factResponse(.success(response)):
+        state.isFactRequestInFlight = false
+        state.currentFact = response
+        return .none
 
-  case .factButtonTapped:
-    state.currentFact = nil
-    state.isFactRequestInFlight = true
-
-    return .task { [count = state.count] in
-      await .factResponse(TaskResult { try await environment.fact.fetch(count) })
+      case .factResponse(.failure):
+        state.isFactRequestInFlight = false
+        return .none
+      }
     }
-    .cancellable(id: NumberFactRequestID.self)
-
-  case let .factResponse(.success(response)):
-    state.isFactRequestInFlight = false
-    state.currentFact = response
-    return .none
-
-  case .factResponse(.failure):
-    state.isFactRequestInFlight = false
-    return .none
   }
 }
 
-// MARK: - Application view
+// MARK: - Feature view
 
 struct EffectsCancellationView: View {
-  let store: Store<EffectsCancellationState, EffectsCancellationAction>
+  @Bindable var store = Store(initialState: EffectsCancellation.State()) {
+    EffectsCancellation()
+  }
+  @Environment(\.openURL) var openURL
 
   var body: some View {
-    WithViewStore(self.store) { viewStore in
-      Form {
-        Section {
-          AboutView(readMe: readMe)
+    Form {
+      Section {
+        AboutView(readMe: readMe)
+      }
+
+      Section {
+        Stepper("\(store.count)", value: $store.count.sending(\.stepperChanged))
+
+        if store.isFactRequestInFlight {
+          HStack {
+            Button("Cancel") { store.send(.cancelButtonTapped) }
+            Spacer()
+            ProgressView()
+              // NB: There seems to be a bug in SwiftUI where the progress view does not show
+              // a second time unless it is given a new identity.
+              .id(UUID())
+          }
+        } else {
+          Button("Number fact") { store.send(.factButtonTapped) }
+            .disabled(store.isFactRequestInFlight)
         }
 
-        Section {
-          Stepper(
-            "\(viewStore.count)",
-            value: viewStore.binding(get: \.count, send: EffectsCancellationAction.stepperChanged)
-          )
-
-          if viewStore.isFactRequestInFlight {
-            HStack {
-              Button("Cancel") { viewStore.send(.cancelButtonTapped) }
-              Spacer()
-              ProgressView()
-                // NB: There seems to be a bug in SwiftUI where the progress view does not show
-                // a second time unless it is given a new identity.
-                .id(UUID())
-            }
-          } else {
-            Button("Number fact") { viewStore.send(.factButtonTapped) }
-              .disabled(viewStore.isFactRequestInFlight)
-          }
-
-          viewStore.currentFact.map {
-            Text($0).padding(.vertical, 8)
-          }
-        }
-
-        Section {
-          Button("Number facts provided by numbersapi.com") {
-            UIApplication.shared.open(URL(string: "http://numbersapi.com")!)
-          }
-          .foregroundStyle(.secondary)
-          .frame(maxWidth: .infinity)
+        if let fact = store.currentFact {
+          Text(fact).padding(.vertical, 8)
         }
       }
-      .buttonStyle(.borderless)
+
+      Section {
+        Button("Number facts provided by numbersapi.com") {
+          self.openURL(URL(string: "http://numbersapi.com")!)
+        }
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity)
+      }
     }
+    .buttonStyle(.borderless)
     .navigationTitle("Effect cancellation")
   }
 }
@@ -128,13 +123,9 @@ struct EffectsCancellation_Previews: PreviewProvider {
   static var previews: some View {
     NavigationView {
       EffectsCancellationView(
-        store: Store(
-          initialState: EffectsCancellationState(),
-          reducer: effectsCancellationReducer,
-          environment: EffectsCancellationEnvironment(
-            fact: .live
-          )
-        )
+        store: Store(initialState: EffectsCancellation.State()) {
+          EffectsCancellation()
+        }
       )
     }
   }

@@ -1,7 +1,5 @@
-import Combine
 import ComposableArchitecture
 import SwiftUI
-import UIKit
 
 private let readMe = """
   This screen demonstrates navigation that depends on loading optional state.
@@ -10,86 +8,75 @@ private let readMe = """
   counter state and fires off an effect that will load this state a second later.
   """
 
-struct NavigateAndLoadState: Equatable {
-  var isNavigationActive = false
-  var optionalCounter: CounterState?
-}
+// MARK: - Feature domain
 
-enum NavigateAndLoadAction: Equatable {
-  case optionalCounter(CounterAction)
-  case setNavigation(isActive: Bool)
-  case setNavigationIsActiveDelayCompleted
-}
+@Reducer
+struct NavigateAndLoad {
+  @ObservableState
+  struct State: Equatable {
+    var isNavigationActive = false
+    var optionalCounter: Counter.State?
+  }
 
-struct NavigateAndLoadEnvironment {
-  var mainQueue: AnySchedulerOf<DispatchQueue>
-}
+  enum Action {
+    case optionalCounter(Counter.Action)
+    case setNavigation(isActive: Bool)
+    case setNavigationIsActiveDelayCompleted
+  }
 
-let navigateAndLoadReducer =
-  counterReducer
-  .optional()
-  .pullback(
-    state: \.optionalCounter,
-    action: /NavigateAndLoadAction.optionalCounter,
-    environment: { _ in CounterEnvironment() }
-  )
-  .combined(
-    with: Reducer<
-      NavigateAndLoadState, NavigateAndLoadAction, NavigateAndLoadEnvironment
-    > { state, action, environment in
+  @Dependency(\.continuousClock) var clock
+  private enum CancelID { case load }
 
-      enum CancelID {}
-
+  var body: some Reducer<State, Action> {
+    Reduce { state, action in
       switch action {
       case .setNavigation(isActive: true):
         state.isNavigationActive = true
-        return .task {
-          try await environment.mainQueue.sleep(for: 1)
-          return .setNavigationIsActiveDelayCompleted
+        return .run { send in
+          try await self.clock.sleep(for: .seconds(1))
+          await send(.setNavigationIsActiveDelayCompleted)
         }
-        .cancellable(id: CancelID.self)
+        .cancellable(id: CancelID.load)
 
       case .setNavigation(isActive: false):
         state.isNavigationActive = false
         state.optionalCounter = nil
-        return .cancel(id: CancelID.self)
+        return .cancel(id: CancelID.load)
 
       case .setNavigationIsActiveDelayCompleted:
-        state.optionalCounter = CounterState()
+        state.optionalCounter = Counter.State()
         return .none
 
       case .optionalCounter:
         return .none
       }
     }
-  )
+    .ifLet(\.optionalCounter, action: \.optionalCounter) {
+      Counter()
+    }
+  }
+}
+
+// MARK: - Feature view
 
 struct NavigateAndLoadView: View {
-  let store: Store<NavigateAndLoadState, NavigateAndLoadAction>
+  @Bindable var store = Store(initialState: NavigateAndLoad.State()) {
+    NavigateAndLoad()
+  }
 
   var body: some View {
-    WithViewStore(self.store) { viewStore in
-      Form {
-        Section {
-          AboutView(readMe: readMe)
-        }
-        NavigationLink(
-          destination: IfLetStore(
-            self.store.scope(
-              state: \.optionalCounter,
-              action: NavigateAndLoadAction.optionalCounter
-            )
-          ) {
-            CounterView(store: $0)
-          } else: {
-            ProgressView()
-          },
-          isActive: viewStore.binding(
-            get: \.isNavigationActive,
-            send: NavigateAndLoadAction.setNavigation(isActive:)
-          )
-        ) {
-          Text("Load optional counter")
+    Form {
+      Section {
+        AboutView(readMe: readMe)
+      }
+      NavigationLink(
+        "Load optional counter",
+        isActive: $store.isNavigationActive.sending(\.setNavigation)
+      ) {
+        if let store = store.scope(state: \.optionalCounter, action: \.optionalCounter) {
+          CounterView(store: store)
+        } else {
+          ProgressView()
         }
       }
     }
@@ -97,17 +84,15 @@ struct NavigateAndLoadView: View {
   }
 }
 
+// MARK: - SwiftUI previews
+
 struct NavigateAndLoadView_Previews: PreviewProvider {
   static var previews: some View {
     NavigationView {
       NavigateAndLoadView(
-        store: Store(
-          initialState: NavigateAndLoadState(),
-          reducer: navigateAndLoadReducer,
-          environment: NavigateAndLoadEnvironment(
-            mainQueue: .main
-          )
-        )
+        store: Store(initialState: NavigateAndLoad.State()) {
+          NavigateAndLoad()
+        }
       )
     }
     .navigationViewStyle(.stack)

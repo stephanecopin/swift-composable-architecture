@@ -6,11 +6,9 @@ import XCTest
 @MainActor
 final class UIKitCaseStudiesTests: XCTestCase {
   func testCountDown() async {
-    let store = TestStore(
-      initialState: CounterState(),
-      reducer: counterReducer,
-      environment: CounterEnvironment()
-    )
+    let store = TestStore(initialState: Counter.State()) {
+      Counter()
+    }
 
     await store.send(.incrementButtonTapped) {
       $0.count = 1
@@ -21,36 +19,36 @@ final class UIKitCaseStudiesTests: XCTestCase {
   }
 
   func testCountDownList() async {
-    let firstState = CounterState()
-    let secondState = CounterState()
-    let thirdState = CounterState()
+    let firstState = Counter.State()
+    let secondState = Counter.State()
+    let thirdState = Counter.State()
 
     let store = TestStore(
-      initialState: CounterListState(
+      initialState: CounterList.State(
         counters: [firstState, secondState, thirdState]
-      ),
-      reducer: counterListReducer,
-      environment: CounterListEnvironment()
-    )
+      )
+    ) {
+      CounterList()
+    }
 
-    await store.send(.counter(id: firstState.id, action: .incrementButtonTapped)) {
+    await store.send(.counters(.element(id: firstState.id, action: .incrementButtonTapped))) {
       $0.counters[id: firstState.id]?.count = 1
     }
-    await store.send(.counter(id: firstState.id, action: .decrementButtonTapped)) {
+    await store.send(.counters(.element(id: firstState.id, action: .decrementButtonTapped))) {
       $0.counters[id: firstState.id]?.count = 0
     }
 
-    await store.send(.counter(id: secondState.id, action: .incrementButtonTapped)) {
+    await store.send(.counters(.element(id: secondState.id, action: .incrementButtonTapped))) {
       $0.counters[id: secondState.id]?.count = 1
     }
-    await store.send(.counter(id: secondState.id, action: .decrementButtonTapped)) {
+    await store.send(.counters(.element(id: secondState.id, action: .decrementButtonTapped))) {
       $0.counters[id: secondState.id]?.count = 0
     }
 
-    await store.send(.counter(id: thirdState.id, action: .incrementButtonTapped)) {
+    await store.send(.counters(.element(id: thirdState.id, action: .incrementButtonTapped))) {
       $0.counters[id: thirdState.id]?.count = 1
     }
-    await store.send(.counter(id: thirdState.id, action: .decrementButtonTapped)) {
+    await store.send(.counters(.element(id: thirdState.id, action: .decrementButtonTapped))) {
       $0.counters[id: thirdState.id]?.count = 0
     }
   }

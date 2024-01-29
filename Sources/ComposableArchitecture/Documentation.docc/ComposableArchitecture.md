@@ -48,26 +48,38 @@ day-to-day when building applications, such as:
 ### Essentials
 
 - <doc:GettingStarted>
-- <doc:GettingReadyForSwiftConcurrency>
-- <doc:Performance>
+- <doc:DependencyManagement>
 - <doc:Testing>
+- <doc:Navigation>
+- <doc:Performance>
 
-### State Management
+### Tutorials
 
-- ``Reducer``
+- <doc:MeetComposableArchitecture>
+
+### State management
+
+- ``Reducer()``
 - ``Effect``
 - ``Store``
-- ``ViewStore``
-
-### Integrations
-
-- <doc:SwiftUI>
-- <doc:UIKit>
 
 ### Testing
 
 - ``TestStore``
-- ``ActorIsolated``
+
+### Integrations
+
+- <doc:SwiftConcurrency>
+- <doc:SwiftUIIntegration>
+- <doc:ObservationBackport>
+- <doc:UIKit>
+
+### Migration guides
+
+- <doc:MigratingTo1.7>
+- <doc:MigratingTo1.6>
+- <doc:MigratingTo1.5>
+- <doc:MigratingTo1.4>
 
 ## See Also
 
